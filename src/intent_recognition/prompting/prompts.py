@@ -23,12 +23,12 @@ PROMPT_VARIANTS: Dict[str, ChatPromptTemplate] = {
             (
                 "system",
                 (
-                    "Classify the user text into one intent. Allowed intents: {labels}. "
-                    "Return JSON with keys: intent (one of labels), confidence (0-1 float), "
-                    "rationale (short). If unsure, use 'fallback'."
+                    "你是意图分类器，只能输出一个意图。允许的意图集合：{labels}。"
+                    "必须严格按照给定的 JSON 模式输出。若不确定，使用 'fallback'。"
+                    "\n输出格式说明：{format_instructions}"
                 ),
             ),
-            ("human", "User text: {text}"),
+            ("human", "用户文本：{text}"),
         ]
     ),
     "analysis_first": ChatPromptTemplate.from_messages(
@@ -36,12 +36,12 @@ PROMPT_VARIANTS: Dict[str, ChatPromptTemplate] = {
             (
                 "system",
                 (
-                    "You are an intent classifier. Allowed intents: {labels}. "
-                    "First think step-by-step, then answer with JSON keys intent/confidence/rationale. "
-                    "If multiple intents match, pick the dominant one and explain briefly."
+                    "你是意图分类器，先逐步思考，再给出 JSON 结果。允许的意图集合：{labels}。"
+                    "必须严格符合提供的 JSON 模式，若多意图冲突，选主导意图并简短说明。"
+                    "\n输出格式说明：{format_instructions}"
                 ),
             ),
-            ("human", "User text: {text}"),
+            ("human", "用户文本：{text}"),
         ]
     ),
 }
@@ -52,10 +52,14 @@ def available_prompts() -> List[str]:
     return sorted(PROMPT_VARIANTS.keys())
 
 
-def build_prompt_template(name: str, labels: List[str] | None = None) -> ChatPromptTemplate:
-    """返回填充好标签的提示模板。"""
+def build_prompt_template(
+    name: str,
+    labels: List[str] | None = None,
+    format_instructions: str = "",
+) -> ChatPromptTemplate:
+    """返回填充好标签与输出格式说明的提示模板。"""
     labels = labels or DEFAULT_LABELS
     if name not in PROMPT_VARIANTS:
         raise KeyError(f"Unknown prompt '{name}'. Available: {', '.join(available_prompts())}")
     label_text = ", ".join(labels)
-    return PROMPT_VARIANTS[name].partial(labels=label_text)
+    return PROMPT_VARIANTS[name].partial(labels=label_text, format_instructions=format_instructions)

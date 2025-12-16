@@ -2,15 +2,23 @@
 基于 Prompt 工程的意图分类运行工具。
 """
 
-import json
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import List, Optional
 
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.runnables import Runnable
 from langchain_openai import ChatOpenAI
 
 from .prompts import DEFAULT_LABELS, available_prompts, build_prompt_template
+
+
+class IntentSchema(BaseModel):
+    """定义输出 JSON 的字段与含义。"""
+
+    intent: str = Field(..., description="预测的意图标签，只能在允许列表内")
+    confidence: float = Field(..., description="0-1 置信度")
+    rationale: str = Field(..., description="简短理由")
 
 
 @dataclass
@@ -33,10 +41,15 @@ def build_chain(
     - prompt_name: prompt 注册表中的名称。
     - labels: 注入到 prompt 的标签列表。
     """
-    prompt = build_prompt_template(prompt_name, labels)
+    parser = JsonOutputParser(pydantic_object=IntentSchema)
+    prompt = build_prompt_template(
+        prompt_name,
+        labels,
+        format_instructions=parser.get_format_instructions(),
+    )
     if model is None:
         model = ChatOpenAI(model="gpt-4o-mini", temperature=0)  # 需要环境变量 OPENAI_API_KEY
-    return prompt | model | StrOutputParser()
+    return prompt | model | parser
 
 
 def classify_intent(
@@ -49,13 +62,14 @@ def classify_intent(
     chain = build_chain(model=model, prompt_name=prompt_name, labels=labels or DEFAULT_LABELS)
     raw = chain.invoke({"text": text})
     try:
-        payload: Dict[str, object] = json.loads(raw)
-        intent = str(payload.get("intent", "fallback"))
-        confidence = float(payload.get("confidence", 0.0))
-        rationale = str(payload.get("rationale", ""))
+        parsed: IntentSchema = raw  # JsonOutputParser 返回 Pydantic 对象
+        intent = parsed.intent
+        confidence = float(parsed.confidence)
+        rationale = parsed.rationale
+        raw_text = parsed.model_dump_json()
     except Exception:
-        intent, confidence, rationale = "fallback", 0.0, "未能解析模型输出"
-    return IntentResult(intent=intent, confidence=confidence, rationale=rationale, raw=raw)
+        intent, confidence, rationale, raw_text = "fallback", 0.0, "未能解析模型输出", str(raw)
+    return IntentResult(intent=intent, confidence=confidence, rationale=rationale, raw=raw_text)
 
 
 __all__ = [
